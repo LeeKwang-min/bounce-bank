@@ -111,6 +111,8 @@ const PADS=[mkPad('floor',50,213,130,213),wallPad(-1,92,120),wallPad(1,92,120),m
 /* ---------- state ---------- */
 let PAL=PALS[0],BG,SUN,FG,SCAN,STARS=[];
 let money=0,stage=1,stageEarned=0,padCount=1,best=0,ips=0,secAcc=0,secT=0,muted=false;
+let padLv=new Array(12).fill(1),speedLv=0,chips=0,chipsEver=0,lifetime=0,shop={speed:0,slot:0,tier:0,start:0},feverT=0,feverCD=0;
+const padSlots=()=>Math.min(PADS.length,9+shop.slot);
 let coins=[],spawnQ=0,spawnCD=0.6,dispT=0,MERGES=[],shake=0,flash=0,time=0,shownMoney=0,saveT=0,hiddenAt=0;
 const P=[],TX=[],BN=[],cardPress=[0,0,0],cardShake=[0,0,0];let hold=null,OFF=null;
 
@@ -237,7 +239,7 @@ function bounceFx(c,x,y,nx,ny){const T=TIERS[c.tier],a=Math.atan2(ny,nx);
      for(let i=0;i<14;i++){const b=i/14*6.283,v=rnd(70,130);part({x,y,vx:Math.cos(b)*v,vy:Math.sin(b)*v,g:60,drag:2.5,life:rnd(0.35,0.6),col:hsl(i*26+time*200,100,65),sz:2,shrink:true});}
      for(let i=0;i<3;i++)part({x:x+rnd(-10,10),y:y+rnd(-12,2),kind:1,life:0.45,col:'#ffffff'});shake=Math.max(shake,0.8);break;}}
 
-function earn(c,x,y){const T=TIERS[c.tier],a=T.v*incomeMult();money+=a;stageEarned+=a;secAcc+=a;
+function earn(c,x,y){const T=TIERS[c.tier],a=T.v*incomeMult();money+=a;stageEarned+=a;secAcc+=a;lifetime+=a;
   pop('+$'+fmt(a),x+rnd(-3,3),y-c.r-6,c.tier>=MAXT?'rainbow':c.tier>=4?'#ffe14d':'#5dff8a');}
 
 /* ---------- physics ---------- */
@@ -298,14 +300,19 @@ function stageUp(){stage++;stageEarned=0;applyPalette();flash=1;shake=3;
   SFX.stage();save();}
 
 /* ---------- save / offline ---------- */
-function save(){try{const tiers=coins.map(c=>c.tier);for(let i=0;i<spawnQ;i++)tiers.push(0);localStorage.setItem(KEY,JSON.stringify({v:1,money,stage,stageEarned,tiers,pads:padCount,ips,best,muted,t:Date.now()}));}catch(e){}}
+function save(){try{const tiers=coins.map(c=>c.tier);for(let i=0;i<spawnQ;i++)tiers.push(0);localStorage.setItem(KEY,JSON.stringify({v:2,money,stage,stageEarned,tiers,pads:padCount,ips,best,muted,t:Date.now(),padLv,speedLv,chips,chipsEver,lifetime,shop,feverCD}));}catch(e){}}
 function grantOffline(sec){if(sec<20||ips<=0)return;const g=ips*Math.min(sec,8*3600);money+=g;stageEarned+=g;
   banner([{s:'WELCOME BACK',sc:1,col:PAL.acc},{s:'+$'+fmt(g),sc:3,col:'#5dff8a'},{s:'IDLE '+(sec>=3600?Math.floor(sec/3600)+'H ':'')+Math.floor(sec%3600/60)+'M',sc:1,col:'#c9a8ff'}],2.6);
   for(let i=0;i<40;i++)part({x:rnd(20,160),y:rnd(26,50)-EX,vx:rnd(-10,10),vy:rnd(20,90),g:200,life:rnd(0.8,1.4),kind:1,col:['#ffffff','#ffe066','#f2b711']});}
 function load(){if(location.hash==='#reset'){try{localStorage.removeItem(KEY);}catch(e){}history.replaceState(null,'',location.pathname);}
-  let s=null;try{s=JSON.parse(localStorage.getItem(KEY));}catch(e){}
-  if(!s||s.v!==1)return false;
-  money=+s.money||0;stage=s.stage|0||1;stageEarned=+s.stageEarned||0;padCount=clamp(s.pads|0,1,PADS.length);ips=+s.ips||0;best=s.best|0;muted=!!s.muted;
+  let raw=null;try{raw=JSON.parse(localStorage.getItem(KEY));}catch(e){}
+  /* keep the pre-prestige save: an old cached build reads v2 as "no save" and would overwrite it */
+  if(raw&&raw.v===1){try{localStorage.setItem(KEY+'.bak',JSON.stringify(raw));}catch(e){}}
+  const s=migrate(raw);if(!s)return false;
+  const sh=s.shop||{};shop={speed:clamp(sh.speed|0,0,5),slot:clamp(sh.slot|0,0,3),tier:clamp(sh.tier|0,0,3),start:clamp(sh.start|0,0,5)};
+  chips=+s.chips||0;chipsEver=+s.chipsEver||0;lifetime=+s.lifetime||0;speedLv=clamp(s.speedLv|0,0,SPEED_MAX);feverCD=clamp(+s.feverCD||0,0,FEVER_CD);
+  padLv=new Array(12).fill(1).map((v,i)=>clamp((s.padLv&&s.padLv[i])|0||1,1,PAD_LV_MAX));
+  money=+s.money||0;stage=s.stage|0||1;stageEarned=+s.stageEarned||0;padCount=clamp(s.pads|0,1,padSlots());ips=+s.ips||0;best=s.best|0;muted=!!s.muted;
   coins=(s.tiers||[0]).slice(0,40).map(t=>{const c=newCoin(clamp(t|0,0,MAXT),rnd(50,130),rnd(90,180),rnd(-80,80),rnd(-200,0));c.landed=true;return c;});
   if(!coins.length)spawnQ=1;spawnCD=0.4;shownMoney=money;
   return (Date.now()-(s.t||Date.now()))/1000;}
