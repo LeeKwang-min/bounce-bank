@@ -1,9 +1,9 @@
 // Economy sim: greedy player, no fever, 1s ticks. Uses the game's real formulas via loadEcon().
-// Hit model from in-game measurement: 0.73 hits/s/coin with 1 pad -> 2.0 with 9 pads; extra slots estimated.
+// Hit model from in-game measurement: 0.73 hits/s/coin with 1 pad -> 2.0 with 9 pads; 12 pads measured at 1.56x the 9-pad hits.
 import { loadEcon } from './econ.mjs';
 const E = loadEcon();
 const RUNS = +(process.argv[2] || 12), VERBOSE = process.argv.includes('-v');
-const hitRate = p => 0.73 + (2.0 - 0.73) * (Math.min(p, 9) - 1) / 8 + 0.12 * Math.max(0, p - 9);
+const hitRate = p => 0.73 + (2.0 - 0.73) * (Math.min(p, 9) - 1) / 8 + 0.37 * Math.max(0, p - 9);
 
 const g = { chips: 0, chipsEver: 0, lifetime: 0, best: 0, shop: { speed: 0, slot: 0, tier: 0, start: 0 }, t: 0 };
 let r; const runs = [], events = [];
