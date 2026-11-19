@@ -23,8 +23,8 @@
 <script>
 'use strict';
 /* BOUNCE BANK — pixel idle coin bouncer. Single file, no assets.
-   Reset save: open with #reset */
-const W=180,STEP=1/120,G=500,KEY='bounceBank.v1';let H=320,EX=0;
+   Reset save: open with #reset · test mode (x1000 income, not saved as a setting): open with #debug */
+const W=180,STEP=1/120,G=500,KEY='bounceBank.v1',DEBUG=location.hash==='#debug';let H=320,EX=0;
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');ctx.imageSmoothingEnabled=false;
 const rnd=(a,b)=>a+Math.random()*(b-a),clamp=(v,a,b)=>v<a?a:v>b?b:v;
 function mk(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.imageSmoothingEnabled=false;return [c,x];}
@@ -252,7 +252,7 @@ function bounceFx(c,x,y,nx,ny){const T=TIERS[c.tier],a=Math.atan2(ny,nx);
      for(let i=0;i<16;i++){const b=i/16*6.283,v=rnd(80,150);part({x,y,vx:Math.cos(b)*v,vy:Math.sin(b)*v,g:60,drag:2.5,life:rnd(0.35,0.6),col:hsl(i*22+time*300,100,60),sz:2,shrink:true});}shake=Math.max(shake,1.4);break;}}
 
 const padMult=i=>Math.pow(2,padLv[i]-1);
-function earn(c,x,y,i){const T=TIERS[c.tier],a=T.v*padMult(i)*incomeMult()*speedIncome;money+=a;stageEarned+=a;secAcc+=a;lifetime+=a;
+function earn(c,x,y,i){const T=TIERS[c.tier],a=T.v*padMult(i)*incomeMult()*speedIncome*(DEBUG?1000:1);money+=a;stageEarned+=a;secAcc+=a;lifetime+=a;
   pop('+$'+fmt(a),x+rnd(-3,3),y-c.r-6,c.tier>=7?'rainbow':c.tier>=4?'#ffe14d':'#5dff8a');}
 
 /* ---------- physics ---------- */
