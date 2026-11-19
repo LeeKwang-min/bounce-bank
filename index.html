@@ -107,7 +107,7 @@ function mkPad(kind,ax,ay,bx,by){const L=Math.hypot(bx-ax,by-ay),ux=(bx-ax)/L,uy
 function wallPad(side,t0,t1){const A=side<0?[12,74]:[168,74],B=side<0?[36,206]:[144,206],L=Math.hypot(B[0]-A[0],B[1]-A[1]),ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L;let nx=uy,ny=-ux;if((CX-A[0])*nx<0){nx=-nx;ny=-ny;}const I=5;
   return mkPad('wall',A[0]+ux*t0+nx*I,A[1]+uy*t0+ny*I,A[0]+ux*t1+nx*I,A[1]+uy*t1+ny*I);}
 const PADS=[mkPad('floor',50,213,130,213),wallPad(-1,92,120),wallPad(1,92,120),mkPad('float',52,146,70,156),mkPad('float',110,156,128,146),wallPad(-1,54,82),wallPad(1,54,82),wallPad(-1,16,44),wallPad(1,16,44),
-  mkPad('float',40,104,56,96),mkPad('float',124,96,140,104),mkPad('float',82,74,98,74)];
+  mkPad('float',40,104,56,96),mkPad('float',124,96,140,104),mkPad('float',116,128,130,120)];
 
 /* ---------- state ---------- */
 let PAL=PALS[0],BG,SUN,FG,SCAN,STARS=[];
@@ -214,7 +214,8 @@ function spark(x,y,n,col,spd,o={}){for(let i=0;i<n;i++){const a=o.dir!==undefine
 const ring=(x,y,r0,r1,life,col,add=true)=>part({x,y,kind:2,r0,r1,life,col,add});
 function bolt(x,y,a,len,col){const pts=[[x,y]];for(let i=1;i<=4;i++){const d=len*i/4,j=i<4?rnd(-3,3):0;pts.push([x+Math.cos(a)*d-Math.sin(a)*j,y+Math.sin(a)*d+Math.cos(a)*j]);}part({x,y,kind:4,pts,life:rnd(0.1,0.18),col,fade:false});}
 function pop(s,x,y,col='#5dff8a',sc=1,life=0.8,vy=-18){if(TX.length>55)TX.shift();TX.push({s,x,y,col,sc,life,max:life,vy});}
-function banner(lines,dur=2){BN.push({lines,t:0,dur});}
+/* a newer banner of the same kind replaces queued (not yet shown) ones, so fast stage clears don't pile up */
+function banner(lines,dur=2,kind){if(kind)for(let i=BN.length-1;i>0;i--)if(BN[i].kind===kind)BN.splice(i,1);BN.push({lines,t:0,dur,kind});}
 const FIRE=['#fffbd0','#ffd23a','#ff7a1a','#d1182e','#4a0a14'];
 
 /* ---------- coins ---------- */
@@ -311,7 +312,7 @@ function cashOut(){if(!canCash())return;const gain=chipGain(lifetime,chipsEver),
   GHOSTS=coins.map(c=>({tier:c.tier,x:c.x,y:c.y,x0:c.x,y0:c.y,ph:c.ph}));ghostT=0;cashFx={gain,m0,m1:chipMult(chipsEver)};
   bankOpen=confirmOpen=false;hold=null;resetRun();spawnCD=1.1;tone(220,0.7,'sawtooth',0.05,4);}
 function resetRun(){money=0;shownMoney=0;stage=1;stageEarned=0;padCount=Math.min(padSlots(),1+shop.start);padLv.fill(1);padMile=1;speedLv=0;feverT=0;feverCD=0;
-  ips=0;secAcc=0;secT=0;coins=[];MERGES=[];spawnQ=1+2*shop.start;applyPalette();save();}
+  ips=0;secAcc=0;secT=0;coins=[];MERGES=[];BN.length=0;spawnQ=1+2*shop.start;applyPalette();save();}
 function cashFinale(){const f=cashFx;cashFx=null;flash=1;shake=3;SFX.stage();
   banner([{s:'CASH OUT!',sc:1,col:PAL.acc},{s:'+'+fmt(f.gain)+'◆',sc:3,col:'#7fd4ff'},{s:'INCOME X'+fmtX(f.m0)+' > X'+fmtX(f.m1),sc:1,col:'#5dff8a'}],3);
   for(let i=0;i<70;i++)part({x:rnd(14,166),y:rnd(26,60)-EX,vx:rnd(-20,20),vy:rnd(20,90),g:60,drag:0.5,life:rnd(1.4,2.4),kind:1,col:['#ffffff','#7fd4ff','#3a96ff'][i%3]});}
@@ -335,13 +336,13 @@ function finishMerge(m){coins.splice(coins.indexOf(m.a),1);coins.splice(coins.in
   if(nt>best){best=nt;banner([{s:'NEW COIN!',sc:1,col:PAL.acc},{s:T.n,sc:3,col:rb?'rainbow':T.c[3]},{s:'$'+fmt(T.v)+' PER BOUNCE',sc:1,col:'#5dff8a'}],2);}}
 
 function stageUp(){stage++;stageEarned=0;applyPalette();flash=1;shake=3;
-  banner([{s:'STAGE CLEAR!',sc:1,col:PAL.acc},{s:'STAGE '+stage,sc:3,col:'#ffffff'},{s:'INCOME X'+fmt(incomeMult()),sc:1,col:'#5dff8a'},{s:'COIN SLOTS '+cap(),sc:1,col:PAL.pad}],2.8);
+  banner([{s:'STAGE CLEAR!',sc:1,col:PAL.acc},{s:'STAGE '+stage,sc:3,col:'#ffffff'},{s:'INCOME X'+fmtX(incomeMult()),sc:1,col:'#5dff8a'},{s:'COIN SLOTS '+cap(),sc:1,col:PAL.pad}],2.8,'stage');
   for(let i=0;i<80;i++)part({x:rnd(14,166),y:rnd(26,60)-EX,vx:rnd(-30,30),vy:rnd(10,70),g:50,drag:0.6,life:rnd(1.6,2.8),col:[PAL.neon,PAL.pad,PAL.acc,'#ffffff'][i%4],sz:2,add:false});
   SFX.stage();save();}
 
 /* ---------- save / offline ---------- */
-function save(){try{const tiers=coins.map(c=>c.tier);for(let i=0;i<spawnQ;i++)tiers.push(0);localStorage.setItem(KEY,JSON.stringify({v:2,money,stage,stageEarned,tiers,pads:padCount,ips,best,muted,t:Date.now(),padLv,speedLv,chips,chipsEver,lifetime,shop,feverCD,feverEver}));}catch(e){}}
-function grantOffline(sec){if(sec<20||ips<=0)return;const g=ips*Math.min(sec,8*3600);money+=g;stageEarned+=g;
+function save(){try{const tiers=coins.map(c=>c.tier);for(let i=0;i<spawnQ;i++)tiers.push(0);localStorage.setItem(KEY,JSON.stringify({v:2,money,stage,stageEarned,tiers,pads:padCount,ips:DEBUG?ips/1000:ips,best,muted,t:Date.now(),padLv,speedLv,chips,chipsEver,lifetime,shop,feverCD,feverEver}));}catch(e){}}
+function grantOffline(sec){if(sec<20||ips<=0)return;const g=ips*Math.min(sec,8*3600);money+=g;stageEarned+=g;lifetime+=g;
   banner([{s:'WELCOME BACK',sc:1,col:PAL.acc},{s:'+$'+fmt(g),sc:3,col:'#5dff8a'},{s:'IDLE '+(sec>=3600?Math.floor(sec/3600)+'H ':'')+Math.floor(sec%3600/60)+'M',sc:1,col:'#c9a8ff'}],2.6);
   for(let i=0;i<40;i++)part({x:rnd(20,160),y:rnd(26,50)-EX,vx:rnd(-10,10),vy:rnd(20,90),g:200,life:rnd(0.8,1.4),kind:1,col:['#ffffff','#ffe066','#f2b711']});}
 function load(){if(location.hash==='#reset'){try{localStorage.removeItem(KEY);}catch(e){}history.replaceState(null,'',location.pathname);}
@@ -474,8 +475,8 @@ function drawCardIcon(i,cx,cy,o){
 function plus(x,y){ctx.fillStyle='#0a3d1a';ctx.fillRect(x-1,y-3,3,7);ctx.fillRect(x-3,y-1,7,3);ctx.fillStyle='#5dff8a';ctx.fillRect(x,y-2,1,5);ctx.fillRect(x-2,y,5,1);}
 function drawBottom(){ctx.fillStyle='#100524';ctx.fillRect(0,236,W,84);ctx.fillStyle=PAL.neon;ctx.fillRect(0,236,W,1);ctx.fillStyle=PAL.neonD;ctx.fillRect(0,237,W,1);
   tx('$/S',4,241,'#9d8bc9');tx(fmt(ips),4+tw('$/S')+3,241,'#5dff8a');
-  const rdy=canCash()&&Math.floor(time*3)%2;if(canCash()){ctx.fillStyle=rdy?PAL.acc:'#2a1650';ctx.fillRect(59,239,tw(fmt(chips))+tw('X'+fmt(incomeMult()))+15,9);}
-  tx('◆',62,241,rdy?'#0a0514':'#7fd4ff');tx(fmt(chips),68,241,rdy?'#0a0514':'#ffffff');tx('X'+fmt(incomeMult()),70+tw(fmt(chips)),241,rdy?'#0a0514':PAL.acc);
+  const rdy=canCash()&&Math.floor(time*3)%2;if(canCash()){ctx.fillStyle=rdy?PAL.acc:'#2a1650';ctx.fillRect(59,239,tw(fmt(chips))+tw('X'+fmtX(incomeMult()))+15,9);}
+  tx('◆',62,241,rdy?'#0a0514':'#7fd4ff');tx(fmt(chips),68,241,rdy?'#0a0514':'#ffffff');tx('X'+fmtX(incomeMult()),70+tw(fmt(chips)),241,rdy?'#0a0514':PAL.acc);
   drawFeverIcon(146,240);
   // mute icon
   ctx.fillStyle='#c9a8ff';ctx.fillRect(167,242,2,3);ctx.fillRect(169,241,1,5);ctx.fillRect(170,240,1,7);
