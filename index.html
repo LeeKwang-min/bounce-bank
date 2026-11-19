@@ -138,16 +138,18 @@ function buildCoin(ti){const T=TIERS[ti],r=T.r,S=2*r+3,o=r+1,R=r+0.5,em=EMB[T.em
   AURA[ti]=ac;}
 TIERS.forEach((_,i)=>buildCoin(i));
 
-function buildPadSprites(p){const {ax,ay,bx,by}=p.face,{nx,ny}=p,L=Math.hypot(bx-ax,by-ay),ux=(bx-ax)/L,uy=(by-ay)/L,pix=new Map();
+function buildPadSprites(p,lv=1){const T=lv>1?TIERS[lv-1]:null,face=T?T.c[3]:PAL.pad,faceD=T?T.c[1]:PAL.padD,sA=T?T.c[2]:PAL.acc,sB=T?T.c[0]:'#1b0f2e';
+  const {ax,ay,bx,by}=p.face,{nx,ny}=p,L=Math.hypot(bx-ax,by-ay),ux=(bx-ax)/L,uy=(by-ay)/L,pix=new Map();
   for(let s=0;s<=L;s+=0.34)for(let k=-2;k<=3;k++){const x=Math.round(ax+ux*s-nx*k),y=Math.round(ay+uy*s-ny*k),key=x+','+y,pr=k>=0?k:10-k,cur=pix.get(key);if(!cur||pr<cur.pr)pix.set(key,{x,y,k,s,pr});}
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const q of pix.values()){x0=Math.min(x0,q.x);y0=Math.min(y0,q.y);x1=Math.max(x1,q.x);y1=Math.max(y1,q.y);}
   p.sx=x0;p.sy=y0;p.frames=[];
   for(let f=0;f<7;f++){const [c,x]=mk(x1-x0+1,y1-y0+1);
     for(const q of pix.values()){let col,a=1;const capd=q.s<1.2||q.s>L-1.2;
-      if(q.k<0){col=PAL.pad;a=q.k===-1?0.35:0.14;}
+      const hue=q.s*14+f*60,on=(Math.floor(q.s+q.k*1.5+f)%6+6)%6<3;
+      if(q.k<0){col=T&&T.prism?hsl(hue,100,70):face;a=q.k===-1?0.35:0.14;}
       else if(q.k===3||(capd&&q.k>0))col='#0a0514';
-      else if(q.k===0)col=f===6?'#ffffff':capd?PAL.padD:PAL.pad;
-      else col=f===6?PAL.pad:((Math.floor(q.s+q.k*1.5+f)%6+6)%6<3?PAL.acc:'#1b0f2e');
+      else if(q.k===0)col=f===6?'#ffffff':capd?faceD:T&&T.prism?hsl(hue,100,78):face;
+      else col=f===6?face:on?(T&&T.prism?hsl(hue,100,60):sA):sB;
       x.globalAlpha=a;x.fillStyle=col;x.fillRect(q.x-x0,q.y-y0,1,1);}
     p.frames.push(c);}}
 
@@ -187,7 +189,7 @@ function buildScene(){const Pl=PAL;buildBG();
   FG=c;}
 function buildScan(){const [c,x]=mk(W,H);x.fillStyle='rgba(0,0,0,0.09)';for(let y=1;y<H;y+=2)x.fillRect(0,y,W,1);
   const g=x.createRadialGradient(W/2,H/2,H*0.32,W/2,H/2,H*0.72);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,0.42)');x.fillStyle=g;x.fillRect(0,0,W,H);SCAN=c;}
-function applyPalette(){PAL=PALS[(stage-1)%PALS.length];buildScene();PADS.forEach(buildPadSprites);}
+function applyPalette(){PAL=PALS[(stage-1)%PALS.length];buildScene();PADS.forEach((p,i)=>buildPadSprites(p,padLv[i]));}
 
 /* ---------- audio ---------- */
 let AC=null,lastBlip=0;
@@ -239,7 +241,8 @@ function bounceFx(c,x,y,nx,ny){const T=TIERS[c.tier],a=Math.atan2(ny,nx);
      for(let i=0;i<14;i++){const b=i/14*6.283,v=rnd(70,130);part({x,y,vx:Math.cos(b)*v,vy:Math.sin(b)*v,g:60,drag:2.5,life:rnd(0.35,0.6),col:hsl(i*26+time*200,100,65),sz:2,shrink:true});}
      for(let i=0;i<3;i++)part({x:x+rnd(-10,10),y:y+rnd(-12,2),kind:1,life:0.45,col:'#ffffff'});shake=Math.max(shake,0.8);break;}}
 
-function earn(c,x,y){const T=TIERS[c.tier],a=T.v*incomeMult();money+=a;stageEarned+=a;secAcc+=a;lifetime+=a;
+const padMult=i=>Math.pow(2,padLv[i]-1);
+function earn(c,x,y,i){const T=TIERS[c.tier],a=T.v*padMult(i)*incomeMult();money+=a;stageEarned+=a;secAcc+=a;lifetime+=a;
   pop('+$'+fmt(a),x+rnd(-3,3),y-c.r-6,c.tier>=MAXT?'rainbow':c.tier>=4?'#ffe14d':'#5dff8a');}
 
 /* ---------- physics ---------- */
@@ -257,7 +260,7 @@ function padHit(c,p,i,h){const [nx,ny,px,py]=h,vn=c.vx*nx+c.vy*ny;if(vn>=0)retur
   p.flash=1;p.sq=1;c.sq=1;
   if(!c.landed){c.landed=true;impactFx(c);}
   if(c.lastPad===i&&time-c.lastPadT<0.12)return;c.lastPad=i;c.lastPadT=time;
-  earn(c,px,py);bounceFx(c,px,py,nx,ny);SFX.bounce(c.tier);}
+  earn(c,px,py,i);bounceFx(c,px,py,nx,ny);SFX.bounce(c.tier);}
 function physics(dt){
   for(const c of coins){if(c.merge)continue;c.vy+=G*dt;c.vx*=1-0.08*dt;c.x+=c.vx*dt;c.y+=c.vy*dt;
     for(const w of WALLS){const h=segHit(c,w,2.5);if(!h)continue;const [nx,ny]=h,vn=c.vx*nx+c.vy*ny;if(vn<0){const tx=-ny,ty=nx,vt=c.vx*tx+c.vy*ty,e=0.45;
@@ -272,15 +275,22 @@ function physics(dt){
     if(!isFinite(c.x+c.y+c.vx+c.vy)||c.x<0||c.x>W||c.y<-EX||c.y>232){Object.assign(c,{x:90,y:48,vx:rnd(-30,30),vy:40});}}}
 
 /* ---------- actions ---------- */
-function offers(){const n=coins.length+spawnQ,cp=cap(),maxP=padCount>=PADS.length,pc=maxP?Infinity:padCost(padCount),cc=coinCost(n,stage),mt=pairTier(),mc=mt>=0?mergeCost(mt,stage):Infinity;
-  return [{cost:pc,can:!maxP&&money>=pc,why:maxP?'max':'money',run:addPad,label:maxP?'MAX':null},
+function offers(){const n=coins.length+spawnQ,cp=cap(),lvMode=padCount>=padSlots(),lp=nextLvPad(),maxP=lvMode&&lp<0,pc=maxP?Infinity:lvMode?lvCost(lvK()):padCost(padCount),cc=coinCost(n,stage),mt=pairTier(),mc=mt>=0?mergeCost(mt,stage):Infinity;
+  return [{cost:pc,can:!maxP&&money>=pc,why:maxP?'max':'money',run:lvMode?levelUpPad:addPad,label:maxP?'MAX':null,mode:lvMode?'lv':'add',lp},
           {cost:cc,can:n<cp&&money>=cc,why:n>=cp?'full':'money',run:()=>{spawnQ++;},label:n>=cp?'FULL':null},
           {cost:mc,can:mt>=0&&money>=mc,why:mt<0?'none':'money',run:doMerge,label:mt<0?'NEED 2':null,tier:mt}];}
 function act(i){OFF=offers();const o=OFF[i];
   if(!o.can){cardShake[i]=0.25;SFX.deny();if(o.why==='full')pop('FULL! MERGE',90,226,'#ff6a8a',1,1.1,-10);else if(o.why==='none')pop('NEED A PAIR',150,226,'#ff6a8a',1,1.1,-10);return false;}
   money-=o.cost;o.run();cardPress[i]=0.12;SFX.buy();spark(31+i*59,290,8,['#ffffff','#7dff9e','#2fbf5b'],70,{g:150});OFF=offers();return true;}
+function padBurst(p,cols){for(let s=0;s<=1.001;s+=0.1){const x=p.face.ax+(p.face.bx-p.face.ax)*s,y=p.face.ay+(p.face.by-p.face.ay)*s;part({x,y,vx:p.nx*rnd(10,40)+rnd(-10,10),vy:p.ny*rnd(10,40)+rnd(-10,10),life:rnd(0.3,0.6),col:cols,kind:1,drag:2});}}
+const lvK=()=>padLv.reduce((a,b)=>a+b,0)-padLv.length;
+function nextLvPad(){let b=-1;for(let i=0;i<padCount;i++)if(padLv[i]<PAD_LV_MAX&&(b<0||padLv[i]<padLv[b]))b=i;return b;}
+let padMile=1;
+function levelUpPad(){const i=nextLvPad();if(i<0)return;const p=PADS[i],L=++padLv[i],T=TIERS[L-1],col=T.prism?rainbow():T.c[3];buildPadSprites(p,L);p.flash=1;p.born=0.3;
+  padBurst(p,['#ffffff',T.c[3],T.c[2]]);ring(p.mx,p.my,2,16,0.35,col);pop('LV'+L+'!',p.mx,p.my-10,T.prism?'rainbow':T.c[3],1,1);shake=Math.max(shake,1.2);
+  if(L>padMile&&padLv.slice(0,padCount).every(v=>v===L)){padMile=L;flash=Math.max(flash,0.3);banner([{s:'ALL PADS',sc:1,col:PAL.acc},{s:T.n+'!',sc:3,col:T.prism?'rainbow':T.c[3]},{s:'X'+fmt(padMult(i))+' PER BOUNCE',sc:1,col:'#5dff8a'}],2.2);}}
 function addPad(){const p=PADS[padCount];padCount++;p.flash=1;p.born=0.6;
-  for(let s=0;s<=1.001;s+=0.1){const x=p.face.ax+(p.face.bx-p.face.ax)*s,y=p.face.ay+(p.face.by-p.face.ay)*s;part({x,y,vx:p.nx*rnd(10,40)+rnd(-10,10),vy:p.ny*rnd(10,40)+rnd(-10,10),life:rnd(0.3,0.6),col:['#ffffff',PAL.pad,PAL.padD],kind:1,drag:2});}
+  padBurst(p,['#ffffff',PAL.pad,PAL.padD]);
   ring(p.mx,p.my,2,18,0.35,PAL.pad);pop('NEW PAD!',p.mx,p.my-10,PAL.pad,1,1);shake=Math.max(shake,1.5);}
 function doMerge(){const t=pairTier();if(t<0)return;const pool=coins.filter(c=>!c.merge&&c.tier===t);
   let a=pool[0],b=pool[1],bd=1e9;for(let i=0;i<pool.length;i++)for(let j=i+1;j<pool.length;j++){const d=Math.hypot(pool[i].x-pool[j].x,pool[i].y-pool[j].y);if(d<bd){bd=d;a=pool[i];b=pool[j];}}
@@ -356,7 +366,7 @@ function update(dt){time+=dt;
 function drawPads(){for(let i=0;i<padCount;i++){const p=PADS[i];if(p.born>0&&Math.floor(time*30)%2)continue;
   const f=p.flash>0.45?6:Math.floor(time*10)%6,o=p.sq*1.6;ctx.drawImage(p.frames[f],Math.round(p.sx-p.nx*o),Math.round(p.sy-p.ny*o));}
   // ghost slot markers for the next pad
-  if(padCount<PADS.length&&Math.floor(time*2)%2){const p=PADS[padCount];ctx.fillStyle=PAL.pad;ctx.globalAlpha=0.25;ctx.beginPath();for(let s=0;s<=1;s+=0.2)ctx.rect(Math.round(p.face.ax+(p.face.bx-p.face.ax)*s),Math.round(p.face.ay+(p.face.by-p.face.ay)*s),1,1);ctx.fill();ctx.globalAlpha=1;}}
+  if(padCount<padSlots()&&Math.floor(time*2)%2){const p=PADS[padCount];ctx.fillStyle=PAL.pad;ctx.globalAlpha=0.25;ctx.beginPath();for(let s=0;s<=1;s+=0.2)ctx.rect(Math.round(p.face.ax+(p.face.bx-p.face.ax)*s),Math.round(p.face.ay+(p.face.by-p.face.ay)*s),1,1);ctx.fill();ctx.globalAlpha=1;}}
 function drawDispenser(){const on=dispT>0,b=Math.floor(time*4);
   ctx.fillStyle='#0a0514';if(EX){ctx.fillRect(85,22-EX,11,EX);ctx.fillStyle='#2a1f48';ctx.fillRect(86,22-EX,9,EX);ctx.fillStyle='#4a3a78';ctx.fillRect(87,22-EX,1,EX);ctx.fillStyle=PAL.neonD;ctx.fillRect(94,22-EX,1,EX);ctx.fillStyle='#0a0514';}ctx.fillRect(82,22,17,15);ctx.fillStyle='#2a1f48';ctx.fillRect(83,22,15,14);ctx.fillStyle='#4a3a78';ctx.fillRect(84,22,2,14);ctx.fillStyle=PAL.neonD;ctx.fillRect(96,22,1,14);
   tx('$',88,26,on?'#ffffff':PAL.acc);
@@ -408,8 +418,9 @@ function drawTop(){ctx.fillStyle='#100524';ctx.fillRect(0,0,W,22);ctx.fillStyle=
   txc(fmt(stageEarned)+'/'+fmt(g),74,13,'#ffffff',1,'#0a0514');
   const ms=fmt(shownMoney),mw=tw(ms,2),mx=177-mw;ctx.drawImage(SPR[2][Math.floor(time*7)%8],mx-16,4);txo(ms,mx,7,'#ffffff',2,'#0a0514');}
 function drawCardIcon(i,cx,cy,o){
-  if(i===0){const x0=cx-12,y0=cy-2;ctx.fillStyle='#0a0514';ctx.fillRect(x0-1,y0-1,26,6);ctx.fillStyle=PAL.pad;ctx.fillRect(x0,y0,24,1);
-    for(let s=0;s<24;s++){ctx.fillStyle=((s+Math.floor(time*10))%6)<3?PAL.acc:'#1b0f2e';ctx.fillRect(x0+s,y0+1,1,3);}ctx.fillStyle=PAL.pad;ctx.globalAlpha=0.35;ctx.fillRect(x0,y0-2,24,1);ctx.globalAlpha=1;
+  if(i===0){const x0=cx-12,y0=cy-2,L=o.mode==='lv'&&o.lp>=0?padLv[o.lp]+1:1,T=L>1?TIERS[L-1]:null,face=T?T.c[3]:PAL.pad,sA=T?T.c[2]:PAL.acc,sB=T?T.c[0]:'#1b0f2e';
+    ctx.fillStyle='#0a0514';ctx.fillRect(x0-1,y0-1,26,6);ctx.fillStyle=T&&T.prism?rainbow():face;ctx.fillRect(x0,y0,24,1);
+    for(let s=0;s<24;s++){ctx.fillStyle=((s+Math.floor(time*10))%6)<3?(T&&T.prism?rainbow(s):sA):sB;ctx.fillRect(x0+s,y0+1,1,3);}ctx.fillStyle=face;ctx.globalAlpha=0.35;ctx.fillRect(x0,y0-2,24,1);ctx.globalAlpha=1;
     plus(cx+12,cy-9);}
   else if(i===1){const s=SPR[0][Math.floor(time*8)%8];ctx.drawImage(s,cx-(s.width>>1)-2,cy-(s.width>>1));plus(cx+8,cy-8);}
   else{const t=o.tier>=0?o.tier:0,a=SPR[t][0],b=SPR[Math.min(MAXT,t+1)][Math.floor(time*8)%8],s=a.width,step=Math.ceil(s*0.45),tot=step+s+6+b.width,x1=Math.round(cx-tot/2);
@@ -421,12 +432,12 @@ function drawBottom(){ctx.fillStyle='#100524';ctx.fillRect(0,236,W,84);ctx.fillS
   // mute icon
   ctx.fillStyle='#c9a8ff';ctx.fillRect(167,242,2,3);ctx.fillRect(169,241,1,5);ctx.fillRect(170,240,1,7);
   if(muted){ctx.fillStyle='#ff6a8a';for(let i=0;i<5;i++){ctx.fillRect(172+i,241+i,1,1);ctx.fillRect(176-i,241+i,1,1);}}else{ctx.fillRect(172,242,1,3);ctx.fillRect(174,241,1,5);}
-  const names=['ADD PAD','ADD COIN','MERGE'],n=coins.length+spawnQ;
+  const names=[OFF[0].mode==='lv'?'PAD LV+':'ADD PAD','ADD COIN','MERGE'],n=coins.length+spawnQ;
   for(let i=0;i<3;i++){const o=OFF[i],sh=cardShake[i]>0?Math.round(Math.sin(cardShake[i]*60)*2):0,x=3+i*59+sh,y=250,pr=cardPress[i]>0?1:0;
     const pulse=o.can&&Math.floor(time*3)%2;rbox(x,y,56,66,o.can?(pulse?PAL.acc:PAL.neon):'#2a1650','#1d0d3a','#3b2470','#100620');
     txc(names[i],x+28,y+4,o.can?'#ffffff':'#c9a8ff');
     drawCardIcon(i,x+28,y+21,o);
-    let sub,subc='#9d8bc9';if(i===0)sub=padCount+'/'+PADS.length;else if(i===1){sub=n+'/'+cap();if(n>=cap())subc='#ff6a8a';}else{sub=o.tier>=0?TIERS[o.tier+1].n:'NO PAIR';if(o.tier>=0)subc=TIERS[o.tier+1].prism?rainbow():TIERS[o.tier+1].c[3];}
+    let sub,subc='#9d8bc9';if(i===0){if(o.mode==='lv'){if(o.lp<0)sub='LV MAX';else{const T=TIERS[padLv[o.lp]];sub=T.n;subc=T.prism?rainbow():T.c[3];}}else sub=padCount+'/'+padSlots();}else if(i===1){sub=n+'/'+cap();if(n>=cap())subc='#ff6a8a';}else{sub=o.tier>=0?TIERS[o.tier+1].n:'NO PAIR';if(o.tier>=0)subc=TIERS[o.tier+1].prism?rainbow():TIERS[o.tier+1].c[3];}
     txc(sub,x+28,y+31,subc);
     const by=y+40+pr;if(o.can)rbox(x+3,by,50,22,'#0a3d1a',cardPress[i]>0?'#7dff9e':'#2fbf5b','#7dff9e','#167a35');else rbox(x+3,by,50,22,'#140c22','#3a3150','#5a4f75','#251d36');
     let s=o.label||('$'+fmt(o.cost));if(tw(s,2)>46)s=o.label||fmt(o.cost);const sc=tw(s,2)>46?1:2;
