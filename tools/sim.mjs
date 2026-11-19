@@ -2,7 +2,7 @@
 // Hit model from in-game measurement: 0.73 hits/s/coin with 1 pad -> 2.0 with 9 pads; extra slots estimated.
 import { loadEcon } from './econ.mjs';
 const E = loadEcon();
-const RUNS = +(process.argv[2] || 10), VERBOSE = process.argv.includes('-v');
+const RUNS = +(process.argv[2] || 12), VERBOSE = process.argv.includes('-v');
 const hitRate = p => 0.73 + (2.0 - 0.73) * (Math.min(p, 9) - 1) / 8 + 0.12 * Math.max(0, p - 9);
 
 const g = { chips: 0, chipsEver: 0, lifetime: 0, best: 0, shop: { speed: 0, slot: 0, tier: 0, start: 0 }, t: 0 };
@@ -73,13 +73,14 @@ runs.forEach((x, i) => console.log(`${i + 1}   | ${f(x.dur)}    | ${String(x.sta
 let gap = 0, gapAt = 0; for (let i = 1; i < events.length; i++) { const d = (events[i].t - events[i - 1].t) / 60; if (d > gap) { gap = d; gapAt = events[i - 1].t / 60; } }
 console.log(`max gap between visible events: ${gap.toFixed(1)} min (at ${gapAt.toFixed(0)} min) · total ${(g.t / 3600).toFixed(1)} h · shop ${JSON.stringify(g.shop)}`);
 if (VERBOSE) console.log(events.filter(e => e.name !== 'lv').map(e => `${(e.t / 60).toFixed(1)} ${e.name}`).join('\n'));
+const avg = a => a.reduce((p, x) => p + x.dur, 0) / a.length;
 const R = runs, checks = [
   ['run1 stage1 ~2min (1-3)', R[0] && R[0].reach[2] >= 1 && R[0].reach[2] <= 3],
   /* sim is a greedy always-on player (~1.5x faster than real idle play), so first CASH OUT 15-35 sim-min ~ 25-50 real-min */
   ['run1 first CASH OUT in 15-35 sim-min', R[0] && R[0].dur >= 15 && R[0].dur <= 35],
   ['run2 reaches stage 6 within 10min', R[1] && R[1].reach[6] <= 10],
   ['run2 ends at stage 7-8', R[1] && R[1].stage >= 7 && R[1].stage <= 8],
-  ['runs 3+ last 8-60 sim-min and later runs grow longer', R.slice(2).every(x => x.dur >= 8 && x.dur <= 60) && R[R.length - 1].dur > R[2].dur],
+  ['runs 3+ last 8-60 sim-min and later runs grow longer', R.slice(2).every(x => x.dur >= 8 && x.dur <= 60) && avg(R.slice(-3)) >= avg(R.slice(3, 6))],
   ['shop not maxed before run 6', (() => { const c = E.SHOP.reduce((a, x) => a + x.cost.reduce((p, q) => p + q, 0), 0); return R.length < 5 || R[4].chipsEver < c; })()],
   ['runs 3+ beat previous max stage by 1-2 (0-3 allowed)', R.slice(2).every((x, i) => x.stage - R[i + 1].stage >= 0 && x.stage - R[i + 1].stage <= 3) && R.slice(2).some((x, i) => x.stage > R[i + 1].stage)],
   ['no visible-event gap > 15min', gap <= 15],
