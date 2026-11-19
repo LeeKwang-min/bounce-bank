@@ -8,9 +8,9 @@ assert.equal(E.coinCap(1, 0), 8); assert.equal(E.coinCap(20, 0), 30); assert.equ
 /* on-screen speed cap */
 assert.deepEqual(E.speedSplit(2), [2, 1]); assert.deepEqual(E.speedSplit(6), [3, 2]);
 assert.equal(E.speedTotal(10, 5, true), 6);
-/* chips: sqrt of lifetime, multiplier ignores spent chips */
-assert.equal(E.chipsTotal(E.CHIP_K * 100), 10);
-assert.equal(E.chipGain(E.CHIP_K * 100, 4), 6); assert.equal(E.chipGain(E.CHIP_K * 100, 99), 0);
+/* chips: cube root of lifetime (8x lifetime to double), multiplier ignores spent chips */
+assert.equal(E.chipsTotal(E.CHIP_K * 1000), 10); assert.equal(E.chipsTotal(E.CHIP_K * 8000), 20);
+assert.equal(E.chipGain(E.CHIP_K * 1000, 4), 6); assert.equal(E.chipGain(E.CHIP_K * 1000, 99), 0);
 assert.equal(E.chipMult(10), 1 + E.CHIP_BONUS * 10);
 /* migration (Review Focus 1) */
 const v1 = { v: 1, money: 5e6, stage: 4, stageEarned: 1e6, tiers: [0, 2, 3], pads: 5, t: 123 };
