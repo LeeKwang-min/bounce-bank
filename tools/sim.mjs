@@ -2,31 +2,31 @@
 // Hit model from in-game measurement: 0.73 hits/s/coin with 1 pad -> 2.0 with 9 pads; 12 pads measured at 1.56x the 9-pad hits.
 import { loadEcon } from './econ.mjs';
 const E = loadEcon();
-const RUNS = +(process.argv[2] || 12), VERBOSE = process.argv.includes('-v');
+const RUNS = +(process.argv[2] || 30), VERBOSE = process.argv.includes('-v');
 const hitRate = p => 0.73 + (2.0 - 0.73) * (Math.min(p, 9) - 1) / 8 + 0.37 * Math.max(0, p - 9);
 
-const g = { chips: 0, chipsEver: 0, lifetime: 0, best: 0, shop: { speed: 0, slot: 0, tier: 0, start: 0 }, t: 0 };
+const g = { chips: 0, chipsEver: 0, lifetime: 0, best: 0, shop: Object.fromEntries(E.SHOP.map(x => [x.id, 0])), t: 0 };
 let r; const runs = [], events = [];
 const ev = name => events.push({ t: g.t, name });
 function startRun() {
   const st = g.shop.start;
-  r = { t0: g.t, money: 0, stage: 1, stageEarned: 0, padCount: 1 + st, padLv: new Array(12).fill(1), speedLv: 0, coins: new Array(1 + 2 * st).fill(0), reach: { 1: 0 } };
+  r = { t0: g.t, money: 0, stage: 1, stageEarned: 0, padCount: 1 + st, padLv: new Array(12).fill(1 + g.shop.padlv), speedLv: 0, coins: new Array(1 + 2 * st).fill(0), reach: { 1: 0 } };
 }
 const slots = () => 9 + g.shop.slot, maxTier = () => 7 + g.shop.tier;
 const avgPad = (pc = r.padCount, lv = r.padLv) => { let s = 0; for (let i = 0; i < pc; i++) s += 2 ** (lv[i] - 1); return s / pc; };
-const mults = () => E.stageMult(r.stage) * E.chipMult(g.chipsEver) * E.speedTotal(r.speedLv, g.shop.speed, false);
+const mults = () => E.stageMult(r.stage) * E.chipMult(g.chipsEver) * E.bounceMult(g.shop.bounce) * E.speedTotal(r.speedLv, g.shop.speed, false);
 const coinV = () => r.coins.reduce((a, t) => a + E.TIERS[t].v, 0);
 const income = () => coinV() * avgPad() * hitRate(r.padCount) * mults();
 const lowPad = () => { let b = -1; for (let i = 0; i < r.padCount; i++) if (r.padLv[i] < E.PAD_LV_MAX && (b < 0 || r.padLv[i] < r.padLv[b])) b = i; return b; };
 const pairTier = () => { const n = {}; for (const t of r.coins) n[t] = (n[t] || 0) + 1; for (let t = 0; t < maxTier(); t++) if (n[t] >= 2) return t; return -1; };
 
 function candidates() {
-  const c = [], base = income(), per = avgPad() * hitRate(r.padCount) * mults(), cap = E.coinCap(r.stage, 1 + 2 * g.shop.start);
+  const c = [], base = income(), per = avgPad() * hitRate(r.padCount) * mults(), cap = E.coinCap(r.stage, 1 + 2 * g.shop.start, 5 * g.shop.coinslot);
   if (r.padCount < slots()) {
     const pc = r.padCount + 1;
     c.push({ k: 'pad', cost: E.padCost(r.padCount), gain: coinV() * avgPad(pc) * hitRate(pc) * mults() - base, run: () => { r.padCount++; ev('pad'); } });
   } else { const i = lowPad(); if (i >= 0) {
-    const lv = r.padLv.slice(); lv[i]++; const k = r.padLv.reduce((a, b) => a + b, 0) - 12;
+    const lv = r.padLv.slice(); lv[i]++; const k = r.padLv.reduce((a, b) => a + b, 0) - 12 * (1 + g.shop.padlv);
     c.push({ k: 'lv', cost: E.lvCost(k), gain: coinV() * avgPad(r.padCount, lv) * hitRate(r.padCount) * mults() - base, run: () => { r.padLv[i]++; ev('lv'); } });
   } }
   if (r.coins.length < cap) c.push({ k: 'coin', cost: E.coinCost(r.coins.length, r.stage), gain: E.TIERS[0].v * per, run: () => r.coins.push(0) });
@@ -53,7 +53,7 @@ function cashOut() {
   runs.push({ dur: (g.t - r.t0) / 60, stage: r.stage, reach: r.reach, gain, chipsEver: g.chipsEver + gain });
   g.chips += gain; g.chipsEver += gain; ev('cashout');
   for (let bought = true; bought;) { bought = false;
-    const opts = E.SHOP.filter(s => g.shop[s.id] < s.max).map(s => ({ s, cost: s.cost[g.shop[s.id]] })).sort((a, b) => a.cost - b.cost);
+    const opts = E.SHOP.filter(s => g.shop[s.id] < s.max).map(s => ({ s, cost: E.shopCost(s, g.shop[s.id]) })).sort((a, b) => a.cost - b.cost);
     if (opts[0] && opts[0].cost <= g.chips) { g.chips -= opts[0].cost; g.shop[opts[0].s.id]++; bought = true; ev('shop:' + opts[0].s.id); }
   }
   startRun();
@@ -80,8 +80,11 @@ const R = runs, checks = [
   ['run1 first CASH OUT in 15-35 sim-min', R[0] && R[0].dur >= 15 && R[0].dur <= 35],
   ['run2 reaches stage 6 within 10min', R[1] && R[1].reach[6] <= 10],
   ['run2 ends at stage 7-8', R[1] && R[1].stage >= 7 && R[1].stage <= 8],
-  ['runs 3+ last 8-60 sim-min and later runs grow longer', R.slice(2).every(x => x.dur >= 8 && x.dur <= 60) && avg(R.slice(-3)) >= avg(R.slice(3, 6))],
-  ['shop not maxed before run 6', (() => { const c = E.SHOP.reduce((a, x) => a + x.cost.reduce((p, q) => p + q, 0), 0); return R.length < 5 || R[4].chipsEver < c; })()],
+  ['runs 3-9 last 8-60 sim-min (BOOST tab not reached yet)', R.slice(2, 9).every(x => x.dur >= 8 && x.dur <= 60)],
+  /* BOOST items land around run 10 and shorten runs for a while; they must not collapse, and must grow back */
+  ['runs 10+ never collapse below 4 sim-min', R.slice(9).every(x => x.dur >= 4 && x.dur <= 60)],
+  ['by run 30 runs grow longer than before BOOST', R.length < 30 || avg(R.slice(-3)) >= avg(R.slice(6, 9))],
+  ['shop not maxed before run 6', (() => { const c = E.SHOP.filter(x => x.tab === 0).reduce((a, x) => a + x.cost.reduce((p, q) => p + q, 0), 0); return R.length < 5 || R[4].chipsEver < c; })()],
   ['runs 3+ beat previous max stage by 1-2 (0-3 allowed)', R.slice(2).every((x, i) => x.stage - R[i + 1].stage >= 0 && x.stage - R[i + 1].stage <= 3) && R.slice(2).some((x, i) => x.stage > R[i + 1].stage)],
   ['no visible-event gap > 15min', gap <= 15],
   [`completed ${RUNS} runs`, R.length === RUNS],

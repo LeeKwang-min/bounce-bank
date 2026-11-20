@@ -70,9 +70,9 @@ const PALS=[
  {bg1:[16,2,10],  bg2:[64,6,36],  neon:'#ff2a5a',neonD:'#7a0a26',pad:'#ffffff',padD:'#7a7a8a',acc:'#ffd84a',sunA:[255,220,120],sunB:[200,20,80], city:'#12020a',win:'#ff7aa0',star:'#ffe0ea'}];
 const GOALS=[1e3,2e4,4e5,8e6,1.5e8,1.5e9,1e10,5e10,2.5e11];
 const goal=s=>s<=GOALS.length?GOALS[s-1]:GOALS[GOALS.length-1]*Math.pow(5,s-GOALS.length);
-const PRESTIGE_STAGE=6,FEVER_DUR=10,FEVER_CD=60,SPEED_CAP=3,SPEED_MAX=10,PAD_LV_MAX=8,CHIP_K=2e6,CHIP_ROOT=3,CHIP_BONUS=0.1;
+const PRESTIGE_STAGE=6,FEVER_DUR=10,FEVER_CD=60,SPEED_CAP=3,SPEED_MAX=10,PAD_LV_MAX=11,CHIP_K=2e6,CHIP_ROOT=3,CHIP_BONUS=0.1;
 const stageMult=s=>Math.pow(2,s-1);
-const coinCap=(s,startCoins)=>Math.max(startCoins,Math.min(30,8+2*(s-1)));
+const coinCap=(s,startCoins,extra=0)=>Math.max(startCoins,Math.min(30,8+2*(s-1))+extra);
 const coinCost=(n,s)=>Math.ceil(10*Math.pow(1.32,n-1)*Math.pow(2,s-1));
 const padCost=n=>Math.ceil(60*Math.pow(7,n-1));
 const lvCost=k=>Math.ceil(2000*Math.pow(5,k));
@@ -83,7 +83,13 @@ const chipGain=(L,chipsEver)=>Math.max(0,chipsTotal(L)-chipsEver);
 const chipMult=chipsEver=>1+CHIP_BONUS*chipsEver;
 const speedTotal=(speedLv,shopSpeed,fever)=>(1+0.1*speedLv)*(1+0.1*shopSpeed)*(fever?2:1);
 const speedSplit=total=>{const ts=Math.min(total,SPEED_CAP);return [ts,total/ts];};
-const SHOP=[{id:'speed',n:'SPEED+',max:5,cost:[5,15,50,150,500]},{id:'slot',n:'PAD SLOT+',max:3,cost:[10,60,400]},{id:'tier',n:'NEW TIER',max:3,cost:[25,200,1500]},{id:'start',n:'START+',max:5,cost:[3,10,40,150,600]}];
+const bounceMult=lv=>1+0.5*lv;
+/* tab 0 BASE · 1 BOOST · 2 AUTO. cost is a list, or a function for endless items */
+const SHOP=[{id:'speed',n:'SPEED+',tab:0,max:5,cost:[5,15,50,150,500]},{id:'slot',n:'PAD SLOT+',tab:0,max:3,cost:[10,60,400]},{id:'tier',n:'NEW TIER',tab:0,max:3,cost:[25,200,1500]},{id:'start',n:'START+',tab:0,max:5,cost:[3,10,40,150,600]},
+ {id:'padlv',n:'PAD LV+',tab:1,max:6,cost:[500,2000,8000,30000,1e5,4e5]},{id:'coinslot',n:'COIN SLOT+',tab:1,max:3,cost:[1000,5000,25000]},{id:'bounce',n:'BOUNCE+',tab:1,max:Infinity,cost:lv=>Math.ceil(500*Math.pow(2,lv))},
+ {id:'acoin',n:'AUTO COIN',tab:2,max:5,cost:[20,60,200,700,2500]},{id:'amerge',n:'AUTO MERGE',tab:2,max:5,cost:[30,100,300,1000,3500]},{id:'abuy',n:'AUTO BUY',tab:2,max:5,cost:[50,150,500,1800,6000]},{id:'afever',n:'AUTO FEVER',tab:2,max:1,cost:[80]}];
+const shopCost=(it,lv)=>typeof it.cost==='function'?it.cost(lv):it.cost[lv];
+const AUTO_IV=[2,1,0.5,0.3,0.15];
 /* v1 saves (pre-prestige) -> v2. lifetime is estimated from cleared goals so old players get fair first chips. */
 function migrate(s){if(!s||typeof s!=='object')return null;if(s.v===2)return s;if(s.v!==1)return null;
   const stage=Math.max(1,s.stage|0),se=+s.stageEarned||0;let lifetime=se;for(let i=1;i<stage;i++)lifetime+=goal(i);
@@ -92,7 +98,8 @@ function migrate(s){if(!s||typeof s!=='object')return null;if(s.v===2)return s;i
 const UNITS=['','K','M','B','T','AA','AB','AC','AD','AE','AF'];
 function fmt(n){if(!isFinite(n))return 'MAX';if(n<1000)return String(Math.floor(n));if(n>=Math.pow(1000,UNITS.length))return n.toExponential(2).replace('e+','E');let i=0;while(n>=1000&&i<UNITS.length-1){n/=1000;i++;}return (n<10?Math.floor(n*100)/100:n<100?Math.floor(n*10)/10:Math.floor(n))+UNITS[i];}
 /*ENDECON*/
-const incomeMult=()=>stageMult(stage)*chipMult(chipsEver),cap=()=>coinCap(stage,1+2*shop.start);
+const permMult=ce=>chipMult(ce)*bounceMult(shop.bounce),incomeMult=()=>stageMult(stage)*permMult(chipsEver),cap=()=>coinCap(stage,1+2*shop.start,5*shop.coinslot);
+const rbw=T=>T.prism||T.omega;
 const fmtX=m=>m<100?String(Math.floor(m*10)/10):fmt(m);
 
 /* ---------- geometry ---------- */
@@ -112,8 +119,8 @@ const PADS=[mkPad('floor',50,213,130,213),wallPad(-1,92,120),wallPad(1,92,120),m
 /* ---------- state ---------- */
 let PAL=PALS[0],BG,SUN,FG,SCAN,STARS=[];
 let money=0,stage=1,stageEarned=0,padCount=1,best=0,ips=0,secAcc=0,secT=0,muted=false;
-let padLv=new Array(12).fill(1),speedLv=0,chips=0,chipsEver=0,lifetime=0,shop={speed:0,slot:0,tier:0,start:0},feverT=0,feverCD=0;
-const padSlots=()=>Math.min(PADS.length,9+shop.slot),maxTier=()=>7+shop.tier;
+let padLv=new Array(12).fill(1),speedLv=0,chips=0,chipsEver=0,lifetime=0,shop=Object.fromEntries(SHOP.map(it=>[it.id,0])),feverT=0,feverCD=0,autoOff={},autoT=[0,0,0],bankTab=0;
+const padSlots=()=>Math.min(PADS.length,9+shop.slot),maxTier=()=>7+shop.tier,padBase=()=>1+shop.padlv;
 let coins=[],spawnQ=0,spawnCD=0.6,dispT=0,MERGES=[],shake=0,flash=0,time=0,shownMoney=0,saveT=0,hiddenAt=0;
 const P=[],TX=[],BN=[],cardPress=[0,0,0,0],cardShake=[0,0,0,0];let timeScale=1,speedIncome=1,feverEver=false,bankOpen=false,confirmOpen=false,BANKHIT=[],GHOSTS=[],ghostT=0,cashFx=null;
 const cardX=i=>3+i*44;let hold=null,OFF=null;
@@ -148,10 +155,10 @@ function buildPadSprites(p,lv=1){const T=lv>1?TIERS[lv-1]:null,face=T?T.c[3]:PAL
   for(let f=0;f<7;f++){const [c,x]=mk(x1-x0+1,y1-y0+1);
     for(const q of pix.values()){let col,a=1;const capd=q.s<1.2||q.s>L-1.2;
       const hue=q.s*14+f*60,on=(Math.floor(q.s+q.k*1.5+f)%6+6)%6<3;
-      if(q.k<0){col=T&&T.prism?hsl(hue,100,70):face;a=q.k===-1?0.35:0.14;}
+      if(q.k<0){col=T&&rbw(T)?hsl(hue,100,70):face;a=q.k===-1?0.35:0.14;}
       else if(q.k===3||(capd&&q.k>0))col='#0a0514';
-      else if(q.k===0)col=f===6?'#ffffff':capd?faceD:T&&T.prism?hsl(hue,100,78):face;
-      else col=f===6?face:on?(T&&T.prism?hsl(hue,100,60):sA):sB;
+      else if(q.k===0)col=f===6?'#ffffff':capd?faceD:T&&rbw(T)?hsl(hue,100,78):face;
+      else col=f===6?face:on?(T&&rbw(T)?hsl(hue,100,60):sA):sB;
       x.globalAlpha=a;x.fillStyle=col;x.fillRect(q.x-x0,q.y-y0,1,1);}
     p.frames.push(c);}}
 
@@ -295,12 +302,12 @@ function act(i){OFF=offers();const o=OFF[i];
   if(!o.can){cardShake[i]=0.25;SFX.deny();if(o.why==='full')pop('FULL! MERGE',90,226,'#ff6a8a',1,1.1,-10);else if(o.why==='none')pop('NEED A PAIR',150,226,'#ff6a8a',1,1.1,-10);return false;}
   money-=o.cost;o.run();cardPress[i]=0.12;SFX.buy();spark(cardX(i)+21,290,8,['#ffffff','#7dff9e','#2fbf5b'],70,{g:150});OFF=offers();return true;}
 function padBurst(p,cols){for(let s=0;s<=1.001;s+=0.1){const x=p.face.ax+(p.face.bx-p.face.ax)*s,y=p.face.ay+(p.face.by-p.face.ay)*s;part({x,y,vx:p.nx*rnd(10,40)+rnd(-10,10),vy:p.ny*rnd(10,40)+rnd(-10,10),life:rnd(0.3,0.6),col:cols,kind:1,drag:2});}}
-const lvK=()=>padLv.reduce((a,b)=>a+b,0)-padLv.length;
+const lvK=()=>padLv.reduce((a,b)=>a+b,0)-padLv.length*padBase();
 function nextLvPad(){let b=-1;for(let i=0;i<padCount;i++)if(padLv[i]<PAD_LV_MAX&&(b<0||padLv[i]<padLv[b]))b=i;return b;}
 let padMile=1;
-function levelUpPad(){const i=nextLvPad();if(i<0)return;const p=PADS[i],L=++padLv[i],T=TIERS[L-1],col=T.prism?rainbow():T.c[3];buildPadSprites(p,L);p.flash=1;p.born=0.3;
-  padBurst(p,['#ffffff',T.c[3],T.c[2]]);ring(p.mx,p.my,2,16,0.35,col);pop('LV'+L+'!',p.mx,p.my-10,T.prism?'rainbow':T.c[3],1,1);shake=Math.max(shake,1.2);
-  if(L>padMile&&padLv.slice(0,padCount).every(v=>v===L)){padMile=L;flash=Math.max(flash,0.3);banner([{s:'ALL PADS',sc:1,col:PAL.acc},{s:T.n+'!',sc:3,col:T.prism?'rainbow':T.c[3]},{s:'X'+fmt(padMult(i))+' PER BOUNCE',sc:1,col:'#5dff8a'}],2.2);}}
+function levelUpPad(){const i=nextLvPad();if(i<0)return;const p=PADS[i],L=++padLv[i],T=TIERS[L-1],col=rbw(T)?rainbow():T.c[3];buildPadSprites(p,L);p.flash=1;p.born=0.3;
+  padBurst(p,['#ffffff',T.c[3],T.c[2]]);ring(p.mx,p.my,2,16,0.35,col);pop('LV'+L+'!',p.mx,p.my-10,rbw(T)?'rainbow':T.c[3],1,1);shake=Math.max(shake,1.2);
+  if(L>padMile&&padLv.slice(0,padCount).every(v=>v===L)){padMile=L;flash=Math.max(flash,0.3);banner([{s:'ALL PADS',sc:1,col:PAL.acc},{s:T.n+'!',sc:3,col:rbw(T)?'rainbow':T.c[3]},{s:'X'+fmt(padMult(i))+' PER BOUNCE',sc:1,col:'#5dff8a'}],2.2);}}
 function speedUp(){speedLv++;SFX.speed();pop('SPEED LV'+speedLv+'!',90,110,'#7fd4ff',1,1.1);for(const c of coins)if(!c.merge){c.vx*=1.15;c.vy*=1.15;}spark(90,46,10,['#ffffff','#bff4ff','#3a96ff'],90,{dir:Math.PI/2,spread:1.2,g:80});}
 function startFever(){feverT=FEVER_DUR;feverCD=FEVER_CD;feverEver=true;SFX.fever();flash=Math.max(flash,0.4);shake=Math.max(shake,2);
   banner([{s:'FEVER!',sc:3,col:'rainbow'},{s:'X2 SPEED '+FEVER_DUR+'S',sc:1,col:'#ffffff'}],1.3);
@@ -308,18 +315,26 @@ function startFever(){feverT=FEVER_DUR;feverCD=FEVER_CD;feverEver=true;SFX.fever
 function tryFever(x,y){if(feverT>0)return;if(feverCD>0){pop('READY IN '+Math.ceil(feverCD)+'S',x,y,'#c9a8ff',1,0.9,-10);SFX.deny();return;}startFever();}
 const canCash=()=>stage>=PRESTIGE_STAGE&&chipGain(lifetime,chipsEver)>=1;
 /* state changes happen at once (safe if the app is closed mid-animation); the old coins fly into the dispenser as ghosts */
-function cashOut(){if(!canCash())return;const gain=chipGain(lifetime,chipsEver),m0=chipMult(chipsEver);chips+=gain;chipsEver+=gain;
-  GHOSTS=coins.map(c=>({tier:c.tier,x:c.x,y:c.y,x0:c.x,y0:c.y,ph:c.ph}));ghostT=0;cashFx={gain,m0,m1:chipMult(chipsEver)};
+function cashOut(){if(!canCash())return;const gain=chipGain(lifetime,chipsEver),m0=permMult(chipsEver);chips+=gain;chipsEver+=gain;
+  GHOSTS=coins.map(c=>({tier:c.tier,x:c.x,y:c.y,x0:c.x,y0:c.y,ph:c.ph}));ghostT=0;cashFx={gain,m0,m1:permMult(chipsEver)};
   bankOpen=confirmOpen=false;hold=null;resetRun();spawnCD=1.1;tone(220,0.7,'sawtooth',0.05,4);}
-function resetRun(){money=0;shownMoney=0;stage=1;stageEarned=0;padCount=Math.min(padSlots(),1+shop.start);padLv.fill(1);padMile=1;speedLv=0;feverT=0;feverCD=0;
+function resetRun(){money=0;shownMoney=0;stage=1;stageEarned=0;padCount=Math.min(padSlots(),1+shop.start);padLv.fill(padBase());padMile=1;speedLv=0;feverT=0;feverCD=0;
   ips=0;secAcc=0;secT=0;coins=[];MERGES=[];BN.length=0;spawnQ=1+2*shop.start;applyPalette();save();}
 function cashFinale(){const f=cashFx;cashFx=null;flash=1;shake=3;SFX.stage();
   banner([{s:'CASH OUT!',sc:1,col:PAL.acc},{s:'+'+fmt(f.gain)+'◆',sc:3,col:'#7fd4ff'},{s:'INCOME X'+fmtX(f.m0)+' > X'+fmtX(f.m1),sc:1,col:'#5dff8a'}],3);
   for(let i=0;i<70;i++)part({x:rnd(14,166),y:rnd(26,60)-EX,vx:rnd(-20,20),vy:rnd(20,90),g:60,drag:0.5,life:rnd(1.4,2.4),kind:1,col:['#ffffff','#7fd4ff','#3a96ff'][i%3]});}
-function buyShop(id){const it=SHOP.find(q=>q.id===id),lv=shop[id];if(lv>=it.max||chips<it.cost[lv]){SFX.deny();return;}
-  chips-=it.cost[lv];shop[id]++;SFX.buy();flash=Math.max(flash,0.25);pop(it.n+' LV'+shop[id]+'!',90,60,'#7fd4ff',1,1.2);
+function buyShop(id){const it=SHOP.find(q=>q.id===id),lv=shop[id],cost=lv<it.max?shopCost(it,lv):Infinity;if(chips<cost){SFX.deny();return;}
+  chips-=cost;shop[id]++;SFX.buy();flash=Math.max(flash,0.25);pop(it.n+' LV'+shop[id]+'!',90,60,'#7fd4ff',1,1.2);
   if(id==='tier')banner([{s:'TIER UNLOCKED',sc:1,col:PAL.acc},{s:TIERS[7+shop.tier].n,sc:3,col:TIERS[7+shop.tier].omega?'rainbow':TIERS[7+shop.tier].c[3]},{s:'MERGE '+TIERS[6+shop.tier].n+'S TO MAKE IT',sc:1,col:'#c9a8ff'}],2.4);
-  if(id==='slot'){const p=PADS[padSlots()-1];ring(p.mx,p.my,2,18,0.4,PAL.pad);}save();}
+  if(id==='slot'){const p=PADS[padSlots()-1];ring(p.mx,p.my,2,18,0.4,PAL.pad);}
+  if(id==='padlv'){const b=padBase(),T=TIERS[b-1];PADS.forEach((p,i)=>{padLv[i]=Math.max(padLv[i],b);buildPadSprites(p,padLv[i]);if(i<padCount){p.flash=1;padBurst(p,['#ffffff',T.c[3],T.c[2]]);}});}
+  save();}
+/* AUTO items: each buys from its card(s) on a timer, cheapest affordable card first */
+const AUTOS=[['acoin',[1]],['amerge',[2]],['abuy',[0,3]]],CARD_AUTO=['abuy','acoin','amerge','abuy'],autoOn=id=>shop[id]>0&&!autoOff[id];
+function autoTick(dt){AUTOS.forEach(([id,cards],k)=>{if(!autoOn(id))return;autoT[k]+=dt;if(autoT[k]<AUTO_IV[shop[id]-1])return;
+    OFF=offers();let b=-1;for(const i of cards)if(OFF[i].can&&(b<0||OFF[i].cost<OFF[b].cost))b=i;
+    if(b>=0){autoT[k]=0;money-=OFF[b].cost;OFF[b].run();cardPress[b]=0.08;}});
+  if(autoOn('afever')&&feverT<=0&&feverCD<=0)startFever();}
 function addPad(){const p=PADS[padCount];padCount++;p.flash=1;p.born=0.6;
   padBurst(p,['#ffffff',PAL.pad,PAL.padD]);
   ring(p.mx,p.my,2,18,0.35,PAL.pad);pop('NEW PAD!',p.mx,p.my-10,PAL.pad,1,1);shake=Math.max(shake,1.5);}
@@ -341,7 +356,7 @@ function stageUp(){stage++;stageEarned=0;applyPalette();flash=1;shake=3;
   SFX.stage();save();}
 
 /* ---------- save / offline ---------- */
-function save(){try{const tiers=coins.map(c=>c.tier);for(let i=0;i<spawnQ;i++)tiers.push(0);localStorage.setItem(KEY,JSON.stringify({v:2,money,stage,stageEarned,tiers,pads:padCount,ips:DEBUG?ips/1000:ips,best,muted,t:Date.now(),padLv,speedLv,chips,chipsEver,lifetime,shop,feverCD,feverEver}));}catch(e){}}
+function save(){try{const tiers=coins.map(c=>c.tier);for(let i=0;i<spawnQ;i++)tiers.push(0);localStorage.setItem(KEY,JSON.stringify({v:2,money,stage,stageEarned,tiers,pads:padCount,ips:DEBUG?ips/1000:ips,best,muted,t:Date.now(),padLv,speedLv,chips,chipsEver,lifetime,shop,feverCD,feverEver,autoOff}));}catch(e){}}
 function grantOffline(sec){if(sec<20||ips<=0)return;const g=ips*Math.min(sec,8*3600);money+=g;stageEarned+=g;lifetime+=g;
   banner([{s:'WELCOME BACK',sc:1,col:PAL.acc},{s:'+$'+fmt(g),sc:3,col:'#5dff8a'},{s:'IDLE '+(sec>=3600?Math.floor(sec/3600)+'H ':'')+Math.floor(sec%3600/60)+'M',sc:1,col:'#c9a8ff'}],2.6);
   for(let i=0;i<40;i++)part({x:rnd(20,160),y:rnd(26,50)-EX,vx:rnd(-10,10),vy:rnd(20,90),g:200,life:rnd(0.8,1.4),kind:1,col:['#ffffff','#ffe066','#f2b711']});}
@@ -350,11 +365,12 @@ function load(){if(location.hash==='#reset'){try{localStorage.removeItem(KEY);}c
   /* keep the pre-prestige save: an old cached build reads v2 as "no save" and would overwrite it */
   if(raw&&raw.v===1){try{localStorage.setItem(KEY+'.bak',JSON.stringify(raw));}catch(e){}}
   const s=migrate(raw);if(!s)return false;
-  const sh=s.shop||{};shop={speed:clamp(sh.speed|0,0,5),slot:clamp(sh.slot|0,0,3),tier:clamp(sh.tier|0,0,3),start:clamp(sh.start|0,0,5)};
+  const sh=s.shop||{};shop=Object.fromEntries(SHOP.map(it=>[it.id,clamp(sh[it.id]|0,0,it.max)]));
+  const ao=s.autoOff||{};autoOff={acoin:ao.acoin===true,amerge:ao.amerge===true,abuy:ao.abuy===true,afever:ao.afever===true};
   chips=+s.chips||0;chipsEver=+s.chipsEver||0;lifetime=+s.lifetime||0;speedLv=clamp(s.speedLv|0,0,SPEED_MAX);feverCD=clamp(+s.feverCD||0,0,FEVER_CD);feverEver=!!s.feverEver;
-  padLv=new Array(12).fill(1).map((v,i)=>clamp((s.padLv&&s.padLv[i])|0||1,1,PAD_LV_MAX));
+  padLv=new Array(12).fill(1).map((v,i)=>clamp((s.padLv&&s.padLv[i])|0||1,padBase(),PAD_LV_MAX));
   money=+s.money||0;stage=s.stage|0||1;stageEarned=+s.stageEarned||0;padCount=clamp(s.pads|0,1,padSlots());ips=+s.ips||0;best=s.best|0;muted=!!s.muted;
-  coins=(s.tiers||[0]).slice(0,40).map(t=>{const c=newCoin(clamp(t|0,0,maxTier()),rnd(50,130),rnd(90,180),rnd(-80,80),rnd(-200,0));c.landed=true;return c;});
+  coins=(s.tiers||[0]).slice(0,60).map(t=>{const c=newCoin(clamp(t|0,0,maxTier()),rnd(50,130),rnd(90,180),rnd(-80,80),rnd(-200,0));c.landed=true;return c;});
   if(!coins.length)spawnQ=1;spawnCD=0.4;shownMoney=money;
   return (Date.now()-(s.t||Date.now()))/1000;}
 
@@ -399,6 +415,7 @@ function update(dt){time+=dt;const sdt=dt*timeScale;
   /* ips feeds offline earnings: freeze it during fever so leaving mid-fever can't inflate them */
   if(feverT>0){secAcc=0;secT=0;}else{secT+=dt;if(secT>=1){ips=ips?ips*0.8+secAcc/secT*0.2:secAcc/secT;secAcc=0;secT=0;}}
   if(stageEarned>=goal(stage))stageUp();
+  autoTick(dt);
   if(hold){hold.t+=dt;if(hold.t>=hold.next){if(!act(hold.id))hold=null;else hold.next+=0.11;}}
   saveT+=dt;if(saveT>5){saveT=0;save();}
   OFF=offers();}
@@ -464,8 +481,8 @@ function drawTop(){ctx.fillStyle='#100524';ctx.fillRect(0,0,W,22);ctx.fillStyle=
   const ms=fmt(shownMoney),mw=tw(ms,2),mx=177-mw;ctx.drawImage(SPR[2][Math.floor(time*7)%8],mx-16,4);txo(ms,mx,7,'#ffffff',2,'#0a0514');}
 function drawCardIcon(i,cx,cy,o){
   if(i===0){const x0=cx-12,y0=cy-2,L=o.mode==='lv'&&o.lp>=0?padLv[o.lp]+1:1,T=L>1?TIERS[L-1]:null,face=T?T.c[3]:PAL.pad,sA=T?T.c[2]:PAL.acc,sB=T?T.c[0]:'#1b0f2e';
-    ctx.fillStyle='#0a0514';ctx.fillRect(x0-1,y0-1,26,6);ctx.fillStyle=T&&T.prism?rainbow():face;ctx.fillRect(x0,y0,24,1);
-    for(let s=0;s<24;s++){ctx.fillStyle=((s+Math.floor(time*10))%6)<3?(T&&T.prism?rainbow(s):sA):sB;ctx.fillRect(x0+s,y0+1,1,3);}ctx.fillStyle=face;ctx.globalAlpha=0.35;ctx.fillRect(x0,y0-2,24,1);ctx.globalAlpha=1;
+    ctx.fillStyle='#0a0514';ctx.fillRect(x0-1,y0-1,26,6);ctx.fillStyle=T&&rbw(T)?rainbow():face;ctx.fillRect(x0,y0,24,1);
+    for(let s=0;s<24;s++){ctx.fillStyle=((s+Math.floor(time*10))%6)<3?(T&&rbw(T)?rainbow(s):sA):sB;ctx.fillRect(x0+s,y0+1,1,3);}ctx.fillStyle=face;ctx.globalAlpha=0.35;ctx.fillRect(x0,y0-2,24,1);ctx.globalAlpha=1;
     plus(cx+12,cy-9);}
   else if(i===1){const s=SPR[0][Math.floor(time*8)%8];ctx.drawImage(s,cx-(s.width>>1)-2,cy-(s.width>>1));plus(cx+8,cy-8);}
   else if(i===2){const t=o.tier>=0?o.tier:0,a=SPR[t][0],b=SPR[Math.min(TIERS.length-1,t+1)][Math.floor(time*8)%8],sa=a.width,sb=b.width,tot=Math.min(38,sa+6+sb),x1=Math.round(cx-tot/2);
@@ -485,8 +502,9 @@ function drawBottom(){ctx.fillStyle='#100524';ctx.fillRect(0,236,W,84);ctx.fillS
   for(let i=0;i<4;i++){const o=OFF[i],sh=cardShake[i]>0?Math.round(Math.sin(cardShake[i]*60)*2):0,x=cardX(i)+sh,y=250,pr=cardPress[i]>0?1:0;
     const pulse=o.can&&Math.floor(time*3)%2;rbox(x,y,42,66,o.can?(pulse?PAL.acc:PAL.neon):'#2a1650','#1d0d3a','#3b2470','#100620');
     txc(names[i],x+21,y+4,o.can?'#ffffff':'#c9a8ff');
+    if(autoOn(CARD_AUTO[i])){ctx.fillStyle='#0a0514';ctx.fillRect(x+36,y+2,5,5);ctx.fillStyle=cardPress[i]>0||Math.floor(time*2)%2?'#7dff9e':'#2fbf5b';ctx.fillRect(x+37,y+3,3,3);}
     drawCardIcon(i,x+21,y+21,o);
-    let sub,subc='#9d8bc9';if(i===0){if(o.mode==='lv'){if(o.lp<0)sub='LV MAX';else{const T=TIERS[padLv[o.lp]];sub=T.n;subc=T.prism?rainbow():T.c[3];}}else sub=padCount+'/'+padSlots();}else if(i===1){sub=n+'/'+cap();if(n>=cap())subc='#ff6a8a';}else if(i===3)sub='LV'+speedLv;else{sub=o.tier>=0?TIERS[o.tier+1].n:'NO PAIR';if(o.tier>=0){const N=TIERS[o.tier+1];subc=N.prism||N.omega?rainbow():N.c[3];}}
+    let sub,subc='#9d8bc9';if(i===0){if(o.mode==='lv'){if(o.lp<0)sub='LV MAX';else{const T=TIERS[padLv[o.lp]];sub=T.n;subc=rbw(T)?rainbow():T.c[3];}}else sub=padCount+'/'+padSlots();}else if(i===1){sub=n+'/'+cap();if(n>=cap())subc='#ff6a8a';}else if(i===3)sub='LV'+speedLv;else{sub=o.tier>=0?TIERS[o.tier+1].n:'NO PAIR';if(o.tier>=0){const N=TIERS[o.tier+1];subc=N.prism||N.omega?rainbow():N.c[3];}}
     txc(sub,x+21,y+31,subc);
     const by=y+40+pr;if(o.can)rbox(x+2,by,38,22,'#0a3d1a',cardPress[i]>0?'#7dff9e':'#2fbf5b','#7dff9e','#167a35');else rbox(x+2,by,38,22,'#140c22','#3a3150','#5a4f75','#251d36');
     let s=o.label||('$'+fmt(o.cost));if(tw(s,2)>34)s=o.label||fmt(o.cost);const sc=tw(s,2)>34?1:2;
@@ -498,24 +516,34 @@ function drawFeverIcon(x,y){const on=feverT>0,ready=!on&&feverCD<=0,col=on?rainb
   const k=on?feverT/FEVER_DUR:ready?1:1-feverCD/FEVER_CD;ctx.fillStyle='#251d36';ctx.fillRect(x+6,y+2,7,3);ctx.fillStyle=col;ctx.fillRect(x+6,y+2,Math.round(7*k),3);}
 function btn(id,x,y,w,h,on,label,sc,sub){BANKHIT.push({id,x,y,w,h});if(on)rbox(x,y,w,h,'#0a3d1a','#2fbf5b','#7dff9e','#167a35');else rbox(x,y,w,h,'#140c22','#3a3150','#5a4f75','#251d36');
   const ty=sub?y+Math.round((h-5*sc-8)/2):y+Math.round((h-5*sc)/2);txc(label,x+w/2,ty,on?'#ffffff':'#8f86a8',sc,on?'#0a3d1a':null);if(sub)txc(sub,x+w/2,ty+5*sc+3,on?'#e0fff0':'#8f86a8');}
+function shopEff(it,lv,mx){const id=it.id;
+  if(id==='speed')return '+10% SPEED';if(id==='slot')return '+1 FLOAT PAD';if(id==='start')return '+1 PAD +2 COINS';if(id==='afever')return 'FEVER WHEN READY';
+  if(id==='tier')return mx?'ALL TIERS OPEN':'UNLOCK '+TIERS[8+lv].n;
+  if(id==='padlv')return 'PADS START '+TIERS[mx?lv:lv+1].n;
+  if(id==='coinslot')return 'MAX COINS '+(30+5*lv)+(mx?'':' > '+(35+5*lv));
+  if(id==='bounce')return 'INCOME X'+fmtX(bounceMult(lv))+' > X'+fmtX(bounceMult(lv+1));
+  const w=id==='acoin'?'COIN':id==='amerge'?'MERGE':'PAD+SPEED';return mx?w+' '+AUTO_IV[lv-1]+'S':lv?w+' '+AUTO_IV[lv-1]+'>'+AUTO_IV[lv]+'S':w+' EVERY '+AUTO_IV[0]+'S';}
 function drawBank(){BANKHIT=[];if(!bankOpen)return;const y0=28+(EX>>1);
   ctx.fillStyle='rgba(6,2,14,0.78)';ctx.fillRect(0,0,W,H);BANKHIT.push({id:'outside',x:0,y:0,w:W,h:H});
   rbox(6,y0,168,262,PAL.neon,'#1d0d3a','#3b2470','#100620');BANKHIT.push({id:'panel',x:6,y:y0,w:168,h:262});
   txc('BANK',90,y0+6,PAL.acc,2,'#0a0514');btn('close',156,y0+4,14,13,false,'X',1);
-  txc('◆'+fmt(chips),90,y0+22,'#ffffff',2,'#0a0514');txc('INCOME X'+fmtX(chipMult(chipsEver))+' FOREVER',90,y0+36,'#5dff8a');
+  txc('◆'+fmt(chips),90,y0+22,'#ffffff',2,'#0a0514');txc('INCOME X'+fmtX(permMult(chipsEver))+' FOREVER',90,y0+36,'#5dff8a');
   const g=chipGain(lifetime,chipsEver),ok=canCash();
-  btn('cash',14,y0+48,152,34,ok,'CASH OUT',2,ok?'+'+fmt(g)+'◆  X'+fmtX(chipMult(chipsEver))+' > X'+fmtX(chipMult(chipsEver+g)):stage<PRESTIGE_STAGE?'REACH STAGE '+PRESTIGE_STAGE:'EARN MORE TO CASH OUT');
-  txc('CHIP SHOP',90,y0+90,'#c9a8ff');
-  SHOP.forEach((it,k)=>{const ry=y0+100+k*38,lv=shop[it.id],mx=lv>=it.max,cost=mx?0:it.cost[lv];rbox(14,ry,152,34,'#2a1650','#140a2a');
-    tx(it.n,19,ry+5,'#ffffff');for(let j=0;j<it.max;j++){ctx.fillStyle=j<lv?'#7fd4ff':'#3a3150';ctx.fillRect(19+j*5,ry+13,4,3);}
-    const eff=it.id==='speed'?'+10% SPEED':it.id==='slot'?'+1 FLOAT PAD':it.id==='tier'?(mx?'ALL TIERS OPEN':'UNLOCK '+TIERS[8+lv].n):'+1 PAD +2 COINS';tx(eff,19,ry+21,'#9d8bc9');
+  btn('cash',14,y0+48,152,34,ok,'CASH OUT',2,ok?'+'+fmt(g)+'◆  X'+fmtX(permMult(chipsEver))+' > X'+fmtX(permMult(chipsEver+g)):stage<PRESTIGE_STAGE?'REACH STAGE '+PRESTIGE_STAGE:'EARN MORE TO CASH OUT');
+  ['BASE','BOOST','AUTO'].forEach((n,t)=>{const x=14+t*51,on=t===bankTab,buy=SHOP.some(it=>it.tab===t&&shop[it.id]<it.max&&chips>=shopCost(it,shop[it.id]));
+    rbox(x,y0+86,50,12,on?PAL.acc:'#2a1650',on?'#3b2470':'#140a2a');txc(n,x+25,y0+90,on?'#ffffff':'#8f86a8');
+    if(buy&&!on&&Math.floor(time*3)%2){ctx.fillStyle=PAL.acc;ctx.fillRect(x+44,y0+90,3,3);}BANKHIT.push({id:'tab:'+t,x,y:y0+86,w:50,h:12});});
+  SHOP.filter(it=>it.tab===bankTab).forEach((it,k)=>{const ry=y0+100+k*38,lv=shop[it.id],mx=lv>=it.max,cost=mx?0:shopCost(it,lv);rbox(14,ry,152,34,'#2a1650','#140a2a');
+    tx(it.n,19,ry+5,'#ffffff');if(it.max===Infinity)tx('LV'+lv,19,ry+12,'#7fd4ff');else for(let j=0;j<it.max;j++){ctx.fillStyle=j<lv?'#7fd4ff':'#3a3150';ctx.fillRect(19+j*5,ry+13,4,3);}
+    tx(shopEff(it,lv,mx),19,ry+21,'#9d8bc9');
+    if(it.tab===2&&lv>0){const on=!autoOff[it.id];btn('tog:'+it.id,92,ry+6,24,22,on,on?'ON':'OFF',1);}
     btn('shop:'+it.id,118,ry+6,44,22,!mx&&chips>=cost,mx?'MAX':'◆'+fmt(cost),tw('◆'+fmt(cost),2)>40||mx?1:2);});
   if(confirmOpen){ctx.fillStyle='rgba(6,2,14,0.7)';ctx.fillRect(6,y0,168,262);const cy=y0+70;rbox(16,cy,148,86,PAL.acc,'#1d0d3a','#3b2470','#100620');BANKHIT.push({id:'dialog',x:16,y:cy,w:148,h:86});
-    txc('RESET TO STAGE 1?',90,cy+8,'#ffffff');txc('COINS, PADS, SPEED RESET',90,cy+18,'#9d8bc9');txc('+'+fmt(g)+'◆  INCOME X'+fmtX(chipMult(chipsEver+g)),90,cy+30,'#5dff8a');
+    txc('RESET TO STAGE 1?',90,cy+8,'#ffffff');txc('COINS, PADS, SPEED RESET',90,cy+18,'#9d8bc9');txc('+'+fmt(g)+'◆  INCOME X'+fmtX(permMult(chipsEver+g)),90,cy+30,'#5dff8a');
     btn('yes',24,cy+48,62,28,true,'YES',2);btn('no',94,cy+48,62,28,false,'NO',2);}}
 function bankTap(x,y){for(let i=BANKHIT.length-1;i>=0;i--){const r=BANKHIT[i];if(x<r.x||x>=r.x+r.w||y<r.y||y>=r.y+r.h)continue;const id=r.id;
     if(confirmOpen){if(id==='yes')cashOut();else if(id==='no'||id==='outside'||id==='panel'){confirmOpen=false;SFX.deny();}return;}
-    if(id==='close'||id==='outside'){bankOpen=false;}else if(id==='cash'){if(canCash()){confirmOpen=true;SFX.buy();}else SFX.deny();}else if(id.startsWith('shop:'))buyShop(id.slice(5));return;}}
+    if(id==='close'||id==='outside'){bankOpen=false;}else if(id==='cash'){if(canCash()){confirmOpen=true;SFX.buy();}else SFX.deny();}else if(id.startsWith('shop:'))buyShop(id.slice(5));else if(id.startsWith('tab:')){bankTab=+id.slice(4);SFX.spawn();}else if(id.startsWith('tog:')){const k=id.slice(4);autoOff[k]=!autoOff[k];SFX.buy();save();}return;}}
 function drawBanner(){const b=BN[0];if(!b)return;const inT=Math.min(1,b.t/0.18),outT=Math.max(0,(b.t-(b.dur-0.22))/0.22);let h=10;for(const l of b.lines)h+=l.sc*5+4;
   const hh=Math.round(h*inT*(1-outT));if(hh<=0)return;const yc=Math.round(128+(EX>>1)-hh/2);ctx.fillStyle='rgba(8,3,20,0.88)';ctx.fillRect(0,yc,W,hh);ctx.fillStyle=PAL.neon;ctx.fillRect(0,yc,W,1);ctx.fillRect(0,yc+hh-1,W,1);
   if(inT<1||outT>0)return;let y=Math.round(128+(EX>>1)-h/2)+7;for(const l of b.lines){txc(l.s,90,y,l.col==='rainbow'?rainbow():l.col,l.sc,'#0a0514');y+=l.sc*5+4;}}

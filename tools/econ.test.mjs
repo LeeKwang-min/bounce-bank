@@ -21,4 +21,12 @@ assert.equal(m.lifetime, 1e3 + 2e4 + 4e5 + 1e6); assert.equal(m.chips, 0); asser
 assert.equal(E.migrate(m), m); assert.equal(E.migrate(null), null); assert.equal(E.migrate({ v: 9 }), null);
 /* big numbers (Review Focus 5) */
 assert.equal(E.fmt(1500), '1.5K'); assert.match(E.fmt(1e40), /^1(\.0+)?E40$/); assert.equal(E.fmt(Infinity), 'MAX');
+/* growth/convenience shop: COIN SLOT+ adds on top of the stage cap, BOUNCE+ is additive and endless */
+assert.equal(E.coinCap(1, 0, 15), 23); assert.equal(E.coinCap(20, 0, 15), 45);
+assert.equal(E.bounceMult(0), 1); assert.equal(E.bounceMult(4), 3);
+const it = id => E.SHOP.find(x => x.id === id);
+assert.equal(E.shopCost(it('speed'), 0), 5); assert.equal(E.shopCost(it('bounce'), 3), 4000);
+assert.equal(it('bounce').max, Infinity); assert.equal(E.PAD_LV_MAX, E.TIERS.length);
+for (const x of E.SHOP.filter(x => x.max !== Infinity)) assert.equal(x.cost.length, x.max, x.id);
+assert.equal(E.AUTO_IV.length, it('acoin').max);
 console.log('econ ok');
