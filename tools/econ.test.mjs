@@ -29,4 +29,13 @@ assert.equal(E.shopCost(it('speed'), 0), 5); assert.equal(E.shopCost(it('bounce'
 assert.equal(it('bounce').max, Infinity); assert.equal(E.PAD_LV_MAX, E.TIERS.length);
 for (const x of E.SHOP.filter(x => x.max !== Infinity)) assert.equal(x.cost.length, x.max, x.id);
 assert.equal(E.AUTO_IV.length, it('acoin').max);
+/* VAULT: stars are the cube root of all chips ever, multiplier ignores spent stars; CHIP+ scales chip targets */
+assert.equal(E.VAULT_STAGE, 40);
+assert.equal(E.starsTotal(E.STAR_K * 27), 3); assert.equal(E.starGain(E.STAR_K * 27, 1), 2); assert.equal(E.starGain(E.STAR_K * 27, 9), 0);
+assert.equal(E.starMult(3), 4);
+assert.equal(E.chipsTotal(E.CHIP_K * 1000, E.chipBoost(1)), 15); assert.equal(E.chipGain(E.CHIP_K * 1000, 4, E.chipBoost(2)), 16);
+assert.deepEqual(['stier', 'chipup', 'acash'].map(id => it(id).tab), [3, 3, 3]);
+assert.equal(it('stier').max + it('tier').max + 7, E.TIERS.length - 1);
+assert.equal(E.TIERS.length, 14); assert.deepEqual(E.TIERS.slice(11).map(t => t.v), [3e5, 1e6, 3e6]);
+for (const t of E.TIERS) assert.ok(E.EMB[t.em] && E.EMB[t.em].length === 5, t.n);
 console.log('econ ok');
